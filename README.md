@@ -76,12 +76,25 @@ push main ─▶ test ─▶ build(:sha) ─▶ deploy-dev ─▶ deploy-qas ─
 
 ### 2. 分支保護（require PR + CI 綠燈才能進 main）
 
-到 repo **Settings → Branches** 對 `main` 加保護規則，把「動到 code 就開 PR」變成硬規則，沒人能偷懶直接 push：
+**本 repo 已啟用**：`main` 禁止直接 push，任何修改（含只改 README）都必須**走 PR** 且 `test` 綠燈才能 merge；並開了 **enforce admins**，連 repo 擁有者也一樣受限、沒有例外。
 
-- **Require a pull request before merging**（禁止直接 push main）
-- **Require status checks to pass** → 勾選 `test`（PR 上會跑的測試 job）
+> 實務結果：**不能再 `git push origin main`**，會被擋。一律走下方 PR 流程：
+>
+> ```bash
+> git checkout -b fix/xxx
+> # 改東西、commit、git push -u origin fix/xxx
+> gh pr create --fill        # 開 PR
+> # 等 CI 綠燈
+> gh pr merge --squash        # 自己就能 merge（required approvals = 0）
+> ```
 
-單人開發可把 required approvals 設 **0**——仍強制走 PR + CI 綠燈，但你自己就能 merge，不會卡在「無法核准自己的 PR」。
+若要在新 repo 重現這組設定（**Settings → Branches** 對 `main` 加規則）：
+
+- **Require a pull request before merging**（禁止直接 push；單人可把 required approvals 設 **0**）
+- **Require status checks to pass** → 勾 `test`（PR 上會跑的測試 job）
+- **Do not allow bypassing the above settings**（= enforce admins，連 owner 也受限）
+
+> 注意：免費方案的**私有** repo 無法用分支保護，需 GitHub Pro 或改為 **public**。
 
 ## 開發流程（trunk-based / GitHub flow）
 
