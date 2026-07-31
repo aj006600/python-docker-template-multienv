@@ -55,7 +55,7 @@ push main ─▶ test ─▶ build(:sha) ─▶ deploy-dev ─▶ deploy-qas ─
 
 ## 一次性設定（GitHub）— 決定 prod 要不要人工核准
 
-> ⚠️ **預設行為：測試通過就一路直接部署到 prod，不會停下來等人核准。**
+> **注意：預設行為是測試通過就一路直接部署到 prod，不會停下來等人核准。**
 > workflow 裡的 `environment: production` 只是掛了個標籤，本身不會擋部署。
 
 要讓 prod 上線前**卡住等人核准**，必須先做這個一次性設定（設定存在 GitHub，不在程式碼裡）：
@@ -66,8 +66,8 @@ push main ─▶ test ─▶ build(:sha) ─▶ deploy-dev ─▶ deploy-qas ─
 設定前後的差別：
 
 ```
-未設定：  test → dev → qas → prod          （一路直接部署，沒人攔）
-設定後：  test → dev → qas → 🛑等核准 → prod （prod 前停下等指定的人按核准）
+未設定：  test → dev → qas → prod            （一路直接部署，沒人攔）
+設定後：  test → dev → qas →（等核准）→ prod  （prod 前停下等指定的人按核准）
 ```
 
 ## 開發流程（trunk-based / GitHub flow）
