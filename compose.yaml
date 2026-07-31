@@ -2,6 +2,7 @@ services:
   app:
     build: .
     image: python-docker-template-multienv:${APP_ENV:-dev}
+    restart: unless-stopped        # 崩潰/主機重開自動拉回（手動 stop 的保持停著）
     # 依 APP_ENV 載入對應環境的設定檔（dev/qas/prod）
     env_file:
       - env/.env.${APP_ENV:-dev}
