@@ -3,6 +3,9 @@ name: CI/CD
 on:
   push:
     branches: [main]
+    paths-ignore:          # 純文件變更不觸發 build/deploy（PR 仍會跑測試）
+      - '**.md'
+      - 'docs/**'
   pull_request:
     branches: [main]
 

@@ -53,12 +53,16 @@ push main ─▶ test ─▶ build(:sha) ─▶ deploy-dev ─▶ deploy-qas ─
 > deploy 步驟目前是 placeholder（印出要部署的映像與環境）。promotion 結構與審核閘門已就緒，
 > 把 `echo` 換成你的實際部署指令即可（SSH pull + compose up、或 k8s/雲端 CLI）。
 
-## 一次性設定（GitHub）— 決定 prod 要不要人工核准
+## 一次性設定（GitHub）
+
+以下設定存在 GitHub、不在程式碼裡，各做一次即可。
+
+### 1. prod 人工核准（Environments）
 
 > **注意：預設行為是測試通過就一路直接部署到 prod，不會停下來等人核准。**
 > workflow 裡的 `environment: production` 只是掛了個標籤，本身不會擋部署。
 
-要讓 prod 上線前**卡住等人核准**，必須先做這個一次性設定（設定存在 GitHub，不在程式碼裡）：
+要讓 prod 上線前**卡住等人核准**：
 
 1. 到 repo **Settings → Environments** 建立 `dev`、`qas`、`production` 三個 environment
 2. 在 `production` 加上 **Required reviewers**（指定誰能核准）
@@ -69,6 +73,15 @@ push main ─▶ test ─▶ build(:sha) ─▶ deploy-dev ─▶ deploy-qas ─
 未設定：  test → dev → qas → prod            （一路直接部署，沒人攔）
 設定後：  test → dev → qas →（等核准）→ prod  （prod 前停下等指定的人按核准）
 ```
+
+### 2. 分支保護（require PR + CI 綠燈才能進 main）
+
+到 repo **Settings → Branches** 對 `main` 加保護規則，把「動到 code 就開 PR」變成硬規則，沒人能偷懶直接 push：
+
+- **Require a pull request before merging**（禁止直接 push main）
+- **Require status checks to pass** → 勾選 `test`（PR 上會跑的測試 job）
+
+單人開發可把 required approvals 設 **0**——仍強制走 PR + CI 綠燈，但你自己就能 merge，不會卡在「無法核准自己的 PR」。
 
 ## 開發流程（trunk-based / GitHub flow）
 
@@ -84,10 +97,11 @@ merge 到 main                # 5. 合併回 main
 build(:sha) → 部署 dev→qas→prod   # 6. CI/CD 啟動
 ```
 
-兩個關鍵：
+三個關鍵：
 
 - **測試在 PR 就自動跑**（不用等本機）——當作合併前的守門員。
 - **「build + 部署」只在 merge 到 main 時才發生**，PR 階段只跑測試。
+- **純文件變更（`.md`）不觸發 build/deploy**（靠 `paths-ignore`）。
 
 對照 `ci-cd.yml` 的觸發設定：
 
@@ -95,6 +109,9 @@ build(:sha) → 部署 dev→qas→prod   # 6. CI/CD 啟動
 on:
   push:
     branches: [main]      # merge 到 main → build + 部署
+    paths-ignore:         # 純文件變更不觸發（PR 仍會跑測試）
+      - '**.md'
+      - 'docs/**'
   pull_request:
     branches: [main]      # 開 PR → 只跑測試（守門）
 ```
@@ -106,6 +123,13 @@ on:
 
 > 環境（dev/qas/prod）是**部署目標**，不是分支——全程只有 `main` 一個分支。
 > 要追蹤/回溯「哪個環境跑哪一版」靠 **SHA 映像標籤**（見下方常用指令），不用開環境分支。
+
+## 部署時機：merge 即部署 vs tag 才發版
+
+目前採用**「merge 即部署」**：每次 merge 到 main → 自動 build + 部署到各環境，prod 前用核准閘門把關。
+這是**精簡又正確的甜蜜點**，先用這個就好。
+
+等到「不想每次 merge 都上 prod」時，再加 **tag-based 發版**：merge 只部署到 dev，prod 改由打 `git tag`（如 `v1.2.0`）觸發——把「合併程式碼」和「正式發版」分開。屬於**需要再加**，現在不做。
 
 ## 常用指令
 
