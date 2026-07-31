@@ -1,0 +1,11 @@
+.git
+.github
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+env/
+compose*.yaml
+Makefile
+.DS_Store

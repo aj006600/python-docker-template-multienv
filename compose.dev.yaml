@@ -1,0 +1,6 @@
+services:
+  app:
+    # dev 專屬：掛載原始碼 + 熱重載，改程式碼不用重建映像
+    volumes:
+      - ./app:/app/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+
+# 機密設定不進版控（非機密的 env/.env.* 才提交）
+env/*.local
+*.secret

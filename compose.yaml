@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    image: ytc-python-docker-template-multienv:${APP_ENV:-dev}
+    # 依 APP_ENV 載入對應環境的設定檔（dev/qas/prod）
+    env_file:
+      - env/.env.${APP_ENV:-dev}
+    ports:
+      - "8000:8000"
