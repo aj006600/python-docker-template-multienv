@@ -1,5 +1,5 @@
 [project]
-name = "ytc-python-docker-template-multienv"
+name = "python-docker-template-multienv"
 version = "0.1.0"
 description = "多環境（dev/qas/prd）Python 服務容器化最精簡範本"
 requires-python = ">=3.12"
