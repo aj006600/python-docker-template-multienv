@@ -1,4 +1,4 @@
-# ytc-python-docker-template-multienv
+# python-docker-template-multienv
 
 多環境（dev / qas / prd）Python 服務容器化的**最精簡**範本：Docker + docker compose + GitHub Actions CI/CD，遵循業界最佳實踐。
 
@@ -187,8 +187,8 @@ docker ps --format '{{.Image}}'       # 看正在跑的容器用哪個映像
 git log --oneline                     # 1. 找出要回到的舊 SHA
 
 # 2. 直接跑那個舊映像（本機示範；真部署時把部署指令指向這個 tag 即可）
-docker pull ghcr.io/<your-account>/ytc-python-docker-template-multienv:<old-sha>
-docker run -p 8000:8000 ghcr.io/<your-account>/ytc-python-docker-template-multienv:<old-sha>
+docker pull ghcr.io/<your-account>/python-docker-template-multienv:<old-sha>
+docker run -p 8000:8000 ghcr.io/<your-account>/python-docker-template-multienv:<old-sha>
 ```
 
 ### 版本標記（可選，讓紀錄更清楚）
