@@ -1,7 +1,7 @@
 [project]
 name = "python-docker-template-multienv"
 version = "0.1.0"
-description = "多環境（dev/qas/prd）Python 服務容器化最精簡範本"
+description = "多環境（dev/qas/prod）Python 服務容器化範本（三種部署模式）"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.115.6",
