@@ -23,7 +23,7 @@
 │   └── compose.same-host-by-domain.yaml # C：同機、Traefik 依 domain
 ├── env/{.env.dev,.env.qas,.env.prod}   # 各環境設定 + HTTP_PORT(B) + DOMAIN(C)
 ├── Makefile                    # make dev / up-separate-hosts / up-port-* / up-domain-*
-└── .github/workflows/ci-cd.yml # test → build 一次 → promote dev→qas→prod
+└── .github/workflows/ci-cd.yml # merge→build+dev/qas 自動；打 v* tag→prod
 ```
 
 > 三種部署模式**擇一使用**（不是同時跑）——差別只在「怎麼對外曝露」。
@@ -40,14 +40,14 @@
 同一份 base、同一個映像，只差對外曝露方式（詳見下方〈三種部署模式〉）。
 
 ### CI/CD promotion（最佳實踐核心）
-**build 一次 → 打不可變的 git SHA 標籤 → 同一個 SHA 依序部署到 dev → qas → prod。**
-三個環境部署的是**同一個映像檔**（用 SHA 指定），不重 build、不靠 `latest`——保證「dev 測過的就是上 prod 的」。
+**build 一次 → 打不可變的 git SHA 標籤 → 同一個映像一路 promote。** dev/qas 靠 merge 自動、prod 靠打 tag——
+各環境跑的都是**同一個映像檔**（用 SHA 指定），不重 build、不靠 `latest`——保證「dev 測過的就是上 prod 的」。
 
 ```
-push main ─▶ test ─▶ build(:sha) ─▶ deploy-dev ─▶ deploy-qas ─▶ deploy-prod
-                                                                    ▲
-                                          GitHub Environment「production」設 required reviewers
-                                          → 上 prod 需人工核准
+merge main ─▶ test ─▶ build(:sha) ─▶ deploy-dev ─▶ deploy-qas      （自動）
+git tag v* ─▶ test ─▶ release(:sha→:v*) ─▶ deploy-prod             （發版才觸發）
+                                              ▲
+                    GitHub Environment「production」設 required reviewers → 上 prod 需人工核准
 ```
 
 > deploy 步驟目前是 placeholder（印出要部署的映像與環境）。promotion 結構與審核閘門已就緒，
@@ -136,8 +136,8 @@ docker ps --filter publish=<port>       # 或看是哪個容器占用
 
 ### 1. prod 人工核准（Environments）
 
-> **注意：預設行為是測試通過就一路直接部署到 prod，不會停下來等人核准。**
-> workflow 裡的 `environment: production` 只是掛了個標籤，本身不會擋部署。
+> **注意：prod 只在打 `v*` tag 時才部署（merge 不會碰 prod）。但即使打了 tag，`environment: production`**
+> **本身也不會擋——要設 required reviewers，發版才會停下等人核准。**
 
 要讓 prod 上線前**卡住等人核准**：
 
@@ -147,8 +147,8 @@ docker ps --filter publish=<port>       # 或看是哪個容器占用
 設定前後的差別：
 
 ```
-未設定：  test → dev → qas → prod            （一路直接部署，沒人攔）
-設定後：  test → dev → qas →（等核准）→ prod  （prod 前停下等指定的人按核准）
+未設定：  git tag v* → prod                （打 tag 就直接上 prod，沒人攔）
+設定後：  git tag v* →（等核准）→ prod       （打 tag 後停下等指定的人按核准）
 ```
 
 ### 2. 分支保護（require PR + CI 綠燈才能進 main）
@@ -184,7 +184,7 @@ git push + 開 PR              # 3. 推上去、開 Pull Request
 （審查 + CI 綠燈）             # 4. 通過審查與 CI
 merge 到 main                # 5. 合併回 main
    ↓ 自動觸發
-build(:sha) → 部署 dev→qas→prod   # 6. CI/CD 啟動
+build(:sha) → 部署 dev、qas    # 6. CI/CD（prod 要另外打 tag，見〈部署流程〉）
 ```
 
 三個關鍵：
@@ -198,10 +198,11 @@ build(:sha) → 部署 dev→qas→prod   # 6. CI/CD 啟動
 ```yaml
 on:
   push:
-    branches: [main]      # merge 到 main → build + 部署
+    branches: [main]      # merge → build + 部署 dev/qas
     paths-ignore:         # 純文件變更不觸發（PR 仍會跑測試）
       - '**.md'
       - 'docs/**'
+    tags: ['v*']          # 打 v* tag → 部署 prod
   pull_request:
     branches: [main]      # 開 PR → 只跑測試（守門）
 ```
@@ -209,17 +210,34 @@ on:
 | 時機 | 會跑什麼 |
 |------|---------|
 | 開 / 更新 PR | 只跑 `test` |
-| merge 到 main | `test` → `build`(:sha) → `deploy dev→qas→prod` |
+| merge 到 main | `test` → `build`(:sha) → `deploy dev、qas` |
+| 打 `v*` tag | `test` → `release`(:sha→:v*) → `deploy prod` |
 
 > 環境（dev/qas/prod）是**部署目標**，不是分支——全程只有 `main` 一個分支。
 > 要追蹤/回溯「哪個環境跑哪一版」靠 **SHA 映像標籤**（見下方常用指令），不用開環境分支。
 
-## 部署時機：merge 即部署 vs tag 才發版
+## 部署流程：merge 到 dev/qas、打 tag 才上 prod
 
-目前採用**「merge 即部署」**：每次 merge 到 main → 自動 build + 部署到各環境，prod 前用核准閘門把關。
-這是**精簡又正確的甜蜜點**，先用這個就好。
+「合併程式碼」和「正式上 prod」分開——日常 merge 只碰 dev/qas，prod 只在你**刻意打 tag 發版**時才動。
 
-等到「不想每次 merge 都上 prod」時，再加 **tag-based 發版**：merge 只部署到 dev，prod 改由打 `git tag`（如 `v1.2.0`）觸發——把「合併程式碼」和「正式發版」分開。屬於**需要再加**，現在不做。
+```
+merge main ─▶ build(:sha) ─▶ deploy dev ─▶ deploy qas          （自動，不含 prod）
+git tag v1.2.0 ─▶ release(:sha→:v1.2.0) ─▶ deploy prod          （發版才觸發）
+```
+
+- **merge 到 `main`** → build 映像（`:sha`）+ 自動部署 **dev、qas**
+- **打 `v*` tag** → 部署 **prod**：把測試過的 `:sha` **加上版本標籤 `:v1.2.0`（不重 build）**再上
+
+### 怎麼發版（操作教學）
+
+```bash
+git checkout main && git pull          # 1. 要發的 commit 已在 main、dev/qas 驗過（:sha 已 build）
+git tag v1.2.0                         # 2. 打版本 tag
+git push origin v1.2.0                 # 3. 推 tag → 觸發 prod 發版
+```
+
+> - prod 前的 `production` environment 若設了 required reviewers，發版會**停下等人核准**（見上方〈一次性設定〉）。
+> - tag 要打在**已在 main、已 build** 的 commit（否則找不到對應的 `:sha` 映像）。
 
 ## 常用指令
 

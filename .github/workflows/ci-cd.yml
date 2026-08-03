@@ -6,6 +6,7 @@ on:
     paths-ignore:          # 純文件變更不觸發 build/deploy（PR 仍會跑測試）
       - '**.md'
       - 'docs/**'
+    tags: ['v*']           # 打 v* tag → 發版到 prod
   pull_request:
     branches: [main]
 
@@ -13,7 +14,7 @@ env:
   IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
-  # ---------- CI：測試 ----------
+  # ---------- CI：測試（PR / main / tag 都跑）----------
   test:
     runs-on: ubuntu-latest
     steps:
@@ -22,10 +23,10 @@ jobs:
       - run: uv sync --frozen --dev
       - run: uv run pytest -q
 
-  # ---------- 建置一次：打不可變的 SHA 標籤 ----------
+  # ========== merge 到 main：build + 自動部署 dev → qas（不含 prod）==========
   build:
     needs: test
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -41,29 +42,51 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          tags: ${{ env.IMAGE }}:${{ github.sha }}   # 不可變 SHA 標籤
 
-  # ---------- 依序 promote 同一個 SHA 映像：dev → qas → prod ----------
   deploy-dev:
     needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: dev
     steps:
-      - run: echo "部署映像 ${{ env.IMAGE }}:${{ github.sha }} 到 dev"
-      # TODO: 換成實際部署指令（例：SSH 到主機 docker pull + compose up）
+      - run: echo "部署 ${{ env.IMAGE }}:${{ github.sha }} 到 dev"
+      # TODO: 換成實際部署指令
 
   deploy-qas:
     needs: deploy-dev
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: qas
     steps:
-      - run: echo "部署映像 ${{ env.IMAGE }}:${{ github.sha }} 到 qas"
+      - run: echo "部署 ${{ env.IMAGE }}:${{ github.sha }} 到 qas"
       # TODO: 換成實際部署指令
 
-  deploy-prod:
-    needs: deploy-qas
+  # ========== 打 v* tag：發版到 prod（同一個映像加版本標籤，不重 build）==========
+  release:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    environment: production   # 在 GitHub 設定 required reviewers → 上 prod 需人工核准
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - run: echo "部署映像 ${{ env.IMAGE }}:${{ github.sha }} 到 prod"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # 不重 build：把 tag 指到的 commit 的 :sha 映像，加上版本標籤（build-once）
+      - run: |
+          docker buildx imagetools create \
+            --tag ${{ env.IMAGE }}:${{ github.ref_name }} \
+            ${{ env.IMAGE }}:${{ github.sha }}
+
+  deploy-prod:
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: production   # 在 GitHub 設 required reviewers → 上 prod 需人工核准
+    steps:
+      - run: echo "發版 ${{ env.IMAGE }}:${{ github.ref_name }}（= :${{ github.sha }}）到 prod"
       # TODO: 換成實際部署指令
