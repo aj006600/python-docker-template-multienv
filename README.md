@@ -38,8 +38,10 @@
 **只提交非機密設定**；真正的密鑰放 CI secrets 或 gitignored 的 `env/*.local`。
 
 ### compose 決定怎麼跑 / 曝露
-本機開發用 `make dev`（localhost:8000 熱重載）；部署則有**三種模式擇一**——
-同一份 base、同一個映像，只差對外曝露方式（詳見下方〈三種部署模式〉）。
+本機開發用 `make dev`（localhost:8000 熱重載，前景執行）；收工用 `make dev-down` 停止並清理
+（或直接 `Ctrl+C` 停止——但只停不移除容器/網路，`make dev-down` 才會移除）。
+部署則有**三種模式擇一**——同一份 base、同一個映像，只差對外曝露方式（詳見下方〈三種部署模式〉），
+且部署模式是背景 `-d` 執行，**一定要對應的 `make down-*` 才會停**。
 
 ### CI/CD promotion（最佳實踐核心）
 **build 一次 → 打不可變的 git SHA 標籤 → 同一個映像一路 promote。** dev/qas 靠 merge 自動、prod 靠打 tag——
