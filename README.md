@@ -252,16 +252,6 @@ uv run pytest -q                                   # 跑測試
 uv add <package>                                   # 新增相依（自動更新 uv.lock）
 ```
 
-### 部署（容器，三種模式擇一）
-
-```bash
-make dev                       # 本機開發：localhost:8000 熱重載
-make up-separate-hosts ENV=dev # A：每環境獨立主機（標準 80 埠）
-make up-port-dev|qas|prod      # B：同機不同 port
-make up-domain-dev|qas|prod    # C：同機 Traefik 依 domain（先起 traefik-proxy）
-make ps                        # 看容器狀態
-```
-
 ### 查看「現在跑的是哪一版」
 
 映像用 **git SHA** 當標籤，所以「哪個環境跑哪一版」= 「跑哪個 SHA」。
