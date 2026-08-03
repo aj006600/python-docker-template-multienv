@@ -1,6 +1,7 @@
 # python-docker-template-multienv
 
-多環境（dev / qas / prd）Python 服務容器化的**最精簡**範本：Docker + docker compose + GitHub Actions CI/CD，遵循業界最佳實踐。
+多環境（dev / qas / prod）Python 服務容器化範本：Docker + docker compose + GitHub Actions CI/CD、三種部署模式，遵循業界最佳實踐。
+（想要更簡單的單環境起點，見 [`python-docker-template-minimal`](../python-docker-template-minimal)）
 
 > 核心原則（12-factor）：**一份程式碼、一個映像、設定隨環境變**。絕不複製程式碼，環境差異只在設定。
 
@@ -30,15 +31,15 @@
 
 ## 三根支柱
 
-### A. 設定分環境
+### 設定分環境
 每個環境一個 `env/.env.<env>` 檔，`app/config.py` 用 pydantic-settings 讀進來。
 **只提交非機密設定**；真正的密鑰放 CI secrets 或 gitignored 的 `env/*.local`。
 
-### B. compose 決定怎麼跑 / 曝露
+### compose 決定怎麼跑 / 曝露
 本機開發用 `make dev`（localhost:8000 熱重載）；部署則有**三種模式擇一**——
 同一份 base、同一個映像，只差對外曝露方式（詳見下方〈三種部署模式〉）。
 
-### C. CI/CD promotion（最佳實踐核心）
+### CI/CD promotion（最佳實踐核心）
 **build 一次 → 打不可變的 git SHA 標籤 → 同一個 SHA 依序部署到 dev → qas → prod。**
 三個環境部署的是**同一個映像檔**（用 SHA 指定），不重 build、不靠 `latest`——保證「dev 測過的就是上 prod 的」。
 
