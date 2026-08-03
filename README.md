@@ -93,6 +93,29 @@ domain 解析：本機 `*.localhost` 零設定；團隊免 DNS 用 `dev.<機器I
 - B、C 各環境是**獨立的 compose project**（獨立網路/容器）。
 - 對外正式 prod 不管哪種模式都還需要：真實域名 + TLS + 對外曝露 + 安全強化。
 
+## 疑難排解：埠衝突
+
+各模式用到的 host 埠：
+
+| 指令 | 綁的 host 埠 |
+|------|------------|
+| `make dev` | 8000 |
+| A `make up-separate-hosts` | 80 |
+| B `make up-port-dev\|qas\|prod` | 8000 / 8001 / 8002（env 的 `HTTP_PORT`） |
+| C `make up-domain-*` | 80（由 traefik-proxy 佔用） |
+
+若看到 `Bind for 0.0.0.0:<port> failed: port is already allocated`，代表該埠被占用。排查：
+
+```bash
+lsof -nP -iTCP:<port> -sTCP:LISTEN     # 看什麼程式占用
+docker ps --filter publish=<port>       # 或看是哪個容器占用
+```
+
+解法：
+- 停掉占用者：`docker stop <容器>`（之後 `docker start <容器>` 可原樣復活）。
+- **B 模式**：改 `env/.env.*` 的 `HTTP_PORT` 換一個沒被占的埠。
+- **A / C**：改用別台主機，或先停掉占 80 的服務。
+
 ## 一次性設定（GitHub）
 
 以下設定存在 GitHub、不在程式碼裡，各做一次即可。
