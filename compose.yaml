@@ -1,10 +1,11 @@
+# Base：只定義服務與內部設定，不決定「對外怎麼曝露」。
+# 對外方式由 override 決定：
+#   - 本機開發   → compose.dev.yaml              （直接開 localhost:8000、熱重載）
+#   - 部署       → deploy/compose.*.yaml         （三種模式擇一）
 services:
   app:
     build: .
-    image: python-docker-template-multienv:${APP_ENV:-dev}
-    restart: unless-stopped        # 崩潰/主機重開自動拉回（手動 stop 的保持停著）
+    restart: unless-stopped
     # 依 APP_ENV 載入對應環境的設定檔（dev/qas/prod）
     env_file:
       - env/.env.${APP_ENV:-dev}
-    ports:
-      - "8000:8000"

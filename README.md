@@ -14,15 +14,19 @@
 ├── tests/
 ├── Dockerfile                  # 單階段 uv + 非 root
 ├── pyproject.toml · uv.lock
-├── compose.yaml                # base：依 APP_ENV 載入 env/.env.<APP_ENV>
-├── compose.dev.yaml            # dev 覆寫：掛載原始碼 + 熱重載
-├── env/
-│   ├── .env.dev                # 各環境設定（只放非機密）
-│   ├── .env.qas
-│   └── .env.prod
-├── Makefile                    # make dev / qas / prod
+├── compose.yaml                # base：只定義服務與內部設定
+├── compose.dev.yaml            # 本機開發：開 localhost:8000 + 熱重載
+├── deploy/                     # 三種部署模式（同一個 app、只差怎麼曝露）
+│   ├── compose.separate-hosts.yaml     # A：每環境各自一台主機（最佳實踐）
+│   ├── compose.same-host-by-port.yaml  # B：同機、不同 port
+│   └── compose.same-host-by-domain.yaml # C：同機、Traefik 依 domain
+├── env/{.env.dev,.env.qas,.env.prod}   # 各環境設定 + HTTP_PORT(B) + DOMAIN(C)
+├── Makefile                    # make dev / up-separate-hosts / up-port-* / up-domain-*
 └── .github/workflows/ci-cd.yml # test → build 一次 → promote dev→qas→prod
 ```
+
+> 三種部署模式**擇一使用**（不是同時跑）——差別只在「怎麼對外曝露」。
+> C 模式用的共用 Traefik 在獨立的 **[`traefik-proxy`](../traefik-proxy)** repo。
 
 ## 三根支柱
 
@@ -30,14 +34,9 @@
 每個環境一個 `env/.env.<env>` 檔，`app/config.py` 用 pydantic-settings 讀進來。
 **只提交非機密設定**；真正的密鑰放 CI secrets 或 gitignored 的 `env/*.local`。
 
-### B. compose 選環境
-用 `APP_ENV` 變數選要載入哪個設定檔（同一份 compose、同一個映像）：
-
-```bash
-make dev     # APP_ENV=dev  + 熱重載掛載原始碼
-make qas     # APP_ENV=qas
-make prod    # APP_ENV=prod
-```
+### B. compose 決定怎麼跑 / 曝露
+本機開發用 `make dev`（localhost:8000 熱重載）；部署則有**三種模式擇一**——
+同一份 base、同一個映像，只差對外曝露方式（詳見下方〈三種部署模式〉）。
 
 ### C. CI/CD promotion（最佳實踐核心）
 **build 一次 → 打不可變的 git SHA 標籤 → 同一個 SHA 依序部署到 dev → qas → prod。**
@@ -52,6 +51,46 @@ push main ─▶ test ─▶ build(:sha) ─▶ deploy-dev ─▶ deploy-qas ─
 
 > deploy 步驟目前是 placeholder（印出要部署的映像與環境）。promotion 結構與審核閘門已就緒，
 > 把 `echo` 換成你的實際部署指令即可（SSH pull + compose up、或 k8s/雲端 CLI）。
+
+## 三種部署模式（擇一）
+
+同一個 app，三種「怎麼把環境跑起來/曝露」的做法。**選一種用**，不是同時跑。
+
+| 模式 | 拓撲 | 隔離/最佳實踐 | 何時選 |
+|------|------|--------------|--------|
+| **A. separate-hosts** | 每環境**各自一台主機**，標準 80 埠 | 最佳實踐、完整隔離 | 有多台機器 / 在意 prod 隔離 |
+| **B. same-host-by-port** | 三環境**同機、不同 port** | 最簡妥協、無隔離 | 只有一台機器、想最快 |
+| **C. same-host-by-domain** | 三環境**同機、Traefik 依 domain** | 同機但用 domain（貼近真實） | 只有一台機器、要 domain |
+
+### A. separate-hosts（最佳實踐）
+在每個環境自己的主機上跑單一環境，佔標準 80 埠：
+```bash
+make up-separate-hosts ENV=dev    # 在 dev 主機（qas / prod 同理）
+```
+存取：`http://<該主機位址>`。
+
+### B. same-host-by-port（最簡妥協）
+三環境擠一台，用不同 port 區分（埠由 env 檔 `HTTP_PORT` 決定）：
+```bash
+make up-port-dev     # → http://<host>:8000
+make up-port-qas     # → http://<host>:8001
+make up-port-prod    # → http://<host>:8002
+```
+
+### C. same-host-by-domain（同機 + Traefik）
+三環境擠一台，用 domain 區分（同 80 埠、Traefik 導流）：
+```bash
+cd ../traefik-proxy && make up && cd -   # 前置（整台機器一次）：啟動共用 Traefik
+make up-domain-dev   # → http://dev.pyapp.localhost
+make up-domain-qas   # → http://qas.pyapp.localhost
+make up-domain-prod  # → http://pyapp.localhost
+```
+domain 解析：本機 `*.localhost` 零設定；團隊免 DNS 用 `dev.<機器IP>.nip.io`；正式對外用真實域名 + DNS + TLS。
+
+### 共通提醒
+- B、C 三環境同機，沒有真正的故障/安全隔離——prod 若重要選 A。
+- B、C 各環境是**獨立的 compose project**（獨立網路/容器）。
+- 對外正式 prod 不管哪種模式都還需要：真實域名 + TLS + 對外曝露 + 安全強化。
 
 ## 一次性設定（GitHub）
 
@@ -155,14 +194,14 @@ uv run pytest -q                                   # 跑測試
 uv add <package>                                   # 新增相依（自動更新 uv.lock）
 ```
 
-### 開發（容器）
+### 部署（容器，三種模式擇一）
 
 ```bash
-make dev              # dev：熱重載 + 掛載原始碼
-make qas / make prod  # 以該環境設定在本機跑
-make down             # 停掉
-docker compose logs -f    # 看日誌
-docker compose ps         # 看容器狀態
+make dev                       # 本機開發：localhost:8000 熱重載
+make up-separate-hosts ENV=dev # A：每環境獨立主機（標準 80 埠）
+make up-port-dev|qas|prod      # B：同機不同 port
+make up-domain-dev|qas|prod    # C：同機 Traefik 依 domain（先起 traefik-proxy）
+make ps                        # 看容器狀態
 ```
 
 ### 查看「現在跑的是哪一版」

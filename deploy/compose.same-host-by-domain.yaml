@@ -1,0 +1,19 @@
+# C：same-host-by-domain——三環境同機，用 domain 區分（同 port 80、靠共用 Traefik 導流）。
+# 前置：到 traefik-proxy repo 跑一次 `make up`。各環境用不同 COMPOSE_PROJECT_NAME 可並存。
+services:
+  app:
+    networks:
+      - default
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      # router/service 名帶 APP_ENV，確保多環境共用同一個 Traefik 時不衝突
+      - "traefik.http.routers.${APP_ENV}-app.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.${APP_ENV}-app.entrypoints=web"
+      - "traefik.http.services.${APP_ENV}-app.loadbalancer.server.port=8000"
+
+networks:
+  proxy:
+    external: true
+  default: {}
