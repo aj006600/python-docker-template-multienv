@@ -53,6 +53,8 @@ git tag v* ─▶ test ─▶ release(:sha→:v*) ─▶ deploy-prod            
 > deploy 步驟目前是 placeholder（印出要部署的映像與環境）。promotion 結構與審核閘門已就緒，
 > 把 `echo` 換成你的實際部署指令即可（SSH pull + compose up、或 k8s/雲端 CLI）。
 
+**映像自動清理**：`.github/workflows/cleanup.yml` 每週跑一次——`:sha` 建置**只留最近 10 個**、**保護 `latest` 與 `v*` 正式版**、刪 untagged。避免映像無限累積。
+
 ## 三種部署模式（擇一）
 
 同一個 app，三種「怎麼把環境跑起來/曝露」的做法。**選一種用**，不是同時跑。
