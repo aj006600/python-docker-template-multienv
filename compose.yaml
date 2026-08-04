@@ -5,6 +5,9 @@
 services:
   app:
     build: .
+    # 映像名：本機 build 預設 python-app:latest；
+    # 部署（make deploy）時傳入 IMAGE=ghcr.io/<帳號>/<repo>、TAG=<sha|v*> 改拉 CI 建好的映像
+    image: ${IMAGE:-python-app}:${TAG:-latest}
     restart: unless-stopped
     # 依 APP_ENV 載入對應環境的設定檔（dev/qas/prod）
     env_file:
