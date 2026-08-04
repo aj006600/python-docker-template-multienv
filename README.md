@@ -245,6 +245,37 @@ git push origin v1.2.0                 # 3. 推 tag → 觸發 prod 發版
 > - prod 前的 `production` environment 若設了 required reviewers，發版會**停下等人核准**（見上方〈一次性設定〉）。
 > - tag 要打在**已在 main、已 build** 的 commit（否則找不到對應的 `:sha` 映像）。
 
+## 三個「dev」別搞混：`make dev`、`make up-*`、CI/CD
+
+同樣叫 dev/qas/prod，散在三處、目的完全不同。
+
+### `make dev` vs 部署模式 `make up-*`（都在你本機）
+
+只是寫 code 用 `make dev` 就好；要把環境實際跑起來（給人用 / 模擬部署）才用 `make up-*`。
+
+| | `make dev` | `make up-separate-hosts` / `up-port-*` / `up-domain-*` |
+|---|-----------|--------------------------------------------------------|
+| 目的 | **本機開發**（寫 code） | **部署環境**（跑起來給人用 / 模擬部署） |
+| 環境數 | 只有 **dev 一個** | **dev / qas / prod** 可同時並存 |
+| 跑什麼 | 掛載原始碼 + **熱重載** | **建好的映像**（改 code 不反映，需重建） |
+| 執行方式 | 前景（`Ctrl+C` 停、`make dev-down` 清） | 背景 `-d`（**一定要 `make down-*`** 才會停） |
+| 怎麼連 | `localhost:8000` | 依模式（80 埠 / `IP:port` / domain） |
+
+### 「本機 `make up-*`」和「CI/CD 部署」是兩個世界
+
+常見誤解是「merge 一下、本機 `make up-*` 的環境就變新」——**不會**。
+
+- **本機（你這台機器）→ 靠重跑 `make up-*`**：用**當下本機 code** 現場 `--build`；merge PR **不會**更新它們，改了 code 想變新要**自己重跑**。
+- **遠端（CI/CD 部署）→ 靠 merge / 打 tag**：`gh pr merge` 部署 dev+qas、`git tag v*` 部署 prod（需核准）。
+
+| 指令 | 更新哪裡 | 更新哪個環境 |
+|------|---------|-------------|
+| `make up-*`（**重跑**） | 你**本機** | 你指定的那一個 |
+| `gh pr merge`（merge main） | **遠端 CI 部署** | **dev + qas**（不含 prod） |
+| `git tag v* && git push` | **遠端 CI 部署** | **prod**（需核准） |
+
+> CI 的 deploy 步驟目前是 **placeholder（只 echo）**——補成實際部署指令（SSH pull + `docker compose up` 等）後，「遠端」那兩列才會真的部署到伺服器。
+
 ## 常用指令
 
 ### 開發（本機，不透過容器）
@@ -255,6 +286,16 @@ APP_ENV=dev uv run uvicorn app.main:app --reload   # 起服務（熱重載）
 uv run pytest -q                                   # 跑測試
 uv add <package>                                   # 新增相依（自動更新 uv.lock）
 ```
+
+### 查看現在起了哪些東西（容器 / 專案）
+
+```bash
+docker compose ls        # 有哪些 compose 專案在跑（一眼看出起了哪些環境/模式）
+make ps                  # 模板內建：正在跑的容器（名稱 / 狀態 / 埠）
+docker ps -a             # 連「停掉但殘留」（exited）也列
+```
+
+> 每個部署環境是獨立的 compose 專案（`python-dev` / `python-qas` / `python-prod`）；`make dev` 則以資料夾名當專案名。用 `docker compose ls` 對照專案名，就知道哪個模式/環境正開著。
 
 ### 查看「現在跑的是哪一版」
 
