@@ -265,7 +265,7 @@ git push origin v1.2.0                 # 3. 推 tag → 觸發 prod 發版
 
 常見誤解是「merge 一下、本機 `make up-*` 的環境就變新」——**不會**。
 
-- **本機（你這台機器）→ 靠重跑 `make up-*`**：用**當下本機 code** 現場 `--build`；merge PR **不會**更新它們，改了 code 想變新要**自己重跑**。
+- **本機（你這台機器）→ 靠重跑 `make up-*`**：用**當下本機 code** 現場 `--build`；merge PR **不會**更新它們，改了 code 想變新要**自己重跑**。改完 code **直接重跑就好、不用先 `make down-*`**——`up -d --build` 會重建映像並自動把舊容器換成新的（recreate，僅幾秒短暫中斷）；只有改了 compose 結構（網路/volume/service）或想全新乾淨重來時才先 down。
 - **遠端（CI/CD 部署）→ 靠 merge / 打 tag**：`gh pr merge` 部署 dev+qas、`git tag v*` 部署 prod（需核准）。
 
 | 指令 | 更新哪裡 | 更新哪個環境 |
