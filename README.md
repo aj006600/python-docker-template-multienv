@@ -24,7 +24,7 @@
 │   ├── compose.same-host-by-port.yaml  # B：同機、不同 port
 │   └── compose.same-host-by-domain.yaml # C：同機、Traefik 依 domain
 ├── env/{.env.dev,.env.qas,.env.prod}   # 各環境設定 + HTTP_PORT(B) + DOMAIN(C)
-├── Makefile                    # make dev / up-separate-hosts / up-port-* / up-domain-*
+├── Makefile                    # make dev（開發）/ up-*（本機預覽）/ deploy（拉映像部署）/ down-* / ps
 └── .github/workflows/ci-cd.yml # merge→build+dev/qas 自動；打 v* tag→prod
 ```
 
@@ -54,8 +54,8 @@ git tag v* ─▶ test ─▶ release(:sha→:v*) ─▶ deploy-prod            
                     GitHub Environment「production」設 required reviewers → 上 prod 需人工核准
 ```
 
-> deploy 步驟目前是 placeholder（印出要部署的映像與環境）。promotion 結構與審核閘門已就緒，
-> 把 `echo` 換成你的實際部署指令即可（SSH pull + compose up、或 k8s/雲端 CLI）。
+> deploy-dev/qas/prod job 目前只**印出**「該在主機上執行的 `make deploy` 指令」，尚未連線主機。
+> promotion 結構與審核閘門已就緒，接上 SSH / docker context 讓 CI 真的在主機執行該指令即可（見 [docs/roadmap.md](docs/roadmap.md)）。
 
 **映像自動清理**：`.github/workflows/cleanup.yml` 每週跑一次——`:sha` 建置**只留最近 10 個**、**保護 `latest` 與 `v*` 正式版**、刪 untagged。避免映像無限累積。
 
@@ -261,11 +261,26 @@ git push origin v1.2.0                 # 3. 推 tag → 觸發 prod 發版
 | 執行方式 | 前景（`Ctrl+C` 停、`make dev-down` 清） | 背景 `-d`（**一定要 `make down-*`** 才會停） |
 | 怎麼連 | `localhost:8000` | 依模式（80 埠 / `IP:port` / domain） |
 
+### dev / qas / prod 怎麼區分——靠 env 檔，不是不同 image
+
+**三個環境跑的是同一個映像**（同一份 source `build:` 出來的），差別只在**載入哪份 `env/.env.<env>` 設定**（12-factor 核心：一份 code、一個 image、設定隨環境變）。接線（以 qas 為例）：
+
+```bash
+make up-domain-qas
+#  = COMPOSE_PROJECT_NAME=python-qas docker compose … --env-file env/.env.qas up -d --build
+```
+
+1. `--env-file env/.env.qas` 讀進 `env/.env.qas` → 其中 `APP_ENV=qas`
+2. `compose.yaml` 的 `env_file: env/.env.${APP_ENV:-dev}` 用這個 `APP_ENV` 解析成 `env/.env.qas`
+3. 容器載入 `env/.env.qas`（`APP_ENV`、`LOG_LEVEL`、`DOMAIN`、`HTTP_PORT`…）
+
+> 「是哪個環境」= **哪份 env 檔被載入**，不是哪個 image。CI/CD 部署時也一樣：build 一次打 `:sha`，dev/qas/prod promote **同一顆** `:sha`——這才保證「dev 測過的就是上 prod 的那顆」。
+
 ### 「本機 `make up-*`」和「CI/CD 部署」是兩個世界
 
 常見誤解是「merge 一下、本機 `make up-*` 的環境就變新」——**不會**。
 
-- **本機（你這台機器）→ 靠重跑 `make up-*`**：用**當下本機 code** 現場 `--build`；merge PR **不會**更新它們，改了 code 想變新要**自己重跑**。改完 code **直接重跑就好、不用先 `make down-*`**——`up -d --build` 會重建映像並自動把舊容器換成新的（recreate，僅幾秒短暫中斷）；只有改了 compose 結構（網路/volume/service）或想全新乾淨重來時才先 down。
+- **本機（你這台機器）→ 靠重跑 `make up-*`**：用**當下本機 code** 現場 `--build`；merge PR **不會**更新它們，改了 code 想變新要**自己重跑**。改完 code **直接重跑就好、不用先 `make down-*`**——`up -d --build` 會重建映像並自動把舊容器換成新的（recreate，僅幾秒短暫中斷）；只有改了 compose 結構（網路/volume/service）或想全新乾淨重來時才先 down。**本機這顆 ≠ 最近 merge 那顆 `:sha`**：`make up-*` 建的是你**本機當前 code**（連未 commit 的都算），不會去 registry 拉——`git pull` 且無改動則內容相同、有未 commit 改動則更新、落後 main 則更舊；要跑「最近 merge 那顆」用拉取式部署指令 **`make deploy`**（拉 CI 建好的 `:sha`、不重 build，見下方）。
 - **遠端（CI/CD 部署）→ 靠 merge / 打 tag**：`gh pr merge` 部署 dev+qas、`git tag v*` 部署 prod（需核准）。
 
 | 指令 | 更新哪裡 | 更新哪個環境 |
@@ -274,7 +289,33 @@ git push origin v1.2.0                 # 3. 推 tag → 觸發 prod 發版
 | `gh pr merge`（merge main） | **遠端 CI 部署** | **dev + qas**（不含 prod） |
 | `git tag v* && git push` | **遠端 CI 部署** | **prod**（需核准） |
 
-> CI 的 deploy 步驟目前是 **placeholder（只 echo）**——補成實際部署指令（SSH pull + `docker compose up` 等）後，「遠端」那兩列才會真的部署到伺服器。
+> CI 的 deploy 步驟目前只會**印出「該在主機上執行的 `make deploy` 指令」**，尚未真的連線主機——接上 SSH / docker context 後（見 [docs/roadmap.md](docs/roadmap.md)），「遠端」那兩列才會真的部署到伺服器。
+
+### 本機 `make up-*` 是「預覽」，真部署用 `make deploy`
+
+**在你機器上跑 `make up-*` ≠ 部署。** 它 `--build` 用你當前 code 現場建，用途是**預覽/測試「該環境的 `env/.env.*` 設定 + 曝露拓撲」**。三種拓撲的預覽能力不同：
+
+- **B（port）/ C（domain）**：可在本機**同時起三個環境**，驗證各環境設定與導流（埠配置、Traefik 路由）。
+- **A（separate-hosts）**：多機拓撲**無法單機模擬**；本機跑 `up-separate-hosts` 只能**一次預覽一個環境**（都綁 80）。
+
+用詞澄清：`deploy/compose.*.yaml` 是**曝露拓撲**（部署時用哪種對外方式）；**在本機跑它們是預覽，不等於部署**。
+
+真部署 = 在**目標主機**上拉 **CI 測過的那顆 `:sha`** 跑（不重 build），用 `make deploy`：
+
+```bash
+make deploy MODE=same-host-by-domain ENV=dev \
+    IMAGE=ghcr.io/<your-account>/python-docker-template-multienv TAG=<git-sha>
+# MODE = separate-hosts | same-host-by-port | same-host-by-domain
+# TAG  = <git-sha>（dev/qas）或 vX.Y.Z（prod）
+```
+
+| 指令 | 職責 | 映像來源 |
+|------|------|---------|
+| `make dev` | 開發（熱重載） | 本機 code（掛載） |
+| `make up-*` | **本機預覽** env 設定 / 拓撲 | 本機 code 現場 build |
+| `make deploy` | **部署執行**（目標主機上跑；CI 與人工共用同一條） | **拉 CI 測過的 `:sha`**，不重 build |
+
+> 環境不「知道」自己該用哪顆映像——**版本（`TAG`）是傳入的**，由 promotion 流程決定：merge → CI 以該 commit 的 sha 部署 dev+qas；打 `v*` tag → prod。人工部署 / 回溯就自己指定 `TAG`。「哪個環境跑哪顆」的紀錄 = GitHub Environments 部署歷史 + `docker ps` 的 image tag。
 
 ## 常用指令
 
@@ -318,9 +359,9 @@ docker ps --format '{{.Image}}'       # 看正在跑的容器用哪個映像
 ```bash
 git log --oneline                     # 1. 找出要回到的舊 SHA
 
-# 2. 直接跑那個舊映像（本機示範；真部署時把部署指令指向這個 tag 即可）
-docker pull ghcr.io/<your-account>/python-docker-template-multienv:<old-sha>
-docker run -p 8000:8000 ghcr.io/<your-account>/python-docker-template-multienv:<old-sha>
+# 2. 在目標主機上把該環境部署回舊 SHA（一行，不重 build）
+make deploy MODE=<擇一> ENV=prod \
+    IMAGE=ghcr.io/<your-account>/python-docker-template-multienv TAG=<old-sha>
 ```
 
 ### 版本標記（可選，讓紀錄更清楚）
